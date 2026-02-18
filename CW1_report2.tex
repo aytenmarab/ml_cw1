@@ -1,0 +1,134 @@
+\documentclass[11pt, a4paper]{article}
+
+% ── Packages ──────────────────────────────────────────────────────────────────
+\usepackage[margin=2cm]{geometry}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{hyperref}
+\usepackage{float}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage[numbers]{natbib}
+\usepackage{parskip}
+
+\title{\textbf{CW1 -- Machine Learning Pipeline Report}\\
+\large 5CCSAMLF -- Machine Learning}
+\author{K23114605}
+\date{February 2026}
+
+\begin{document}
+\maketitle
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Exploratory Data Analysis}
+% ══════════════════════════════════════════════════════════════════════════════
+
+The training dataset contains 10{,}000 diamond samples with 30 features and a continuous target variable (\texttt{outcome}). Features include standard diamond attributes (carat, cut, color, clarity, depth, table, price, and physical dimensions $x$, $y$, $z$) alongside 20 unnamed numeric features (\texttt{a1}--\texttt{a10}, \texttt{b1}--\texttt{b10}). No missing values were found.
+
+\textbf{Target distribution.}
+The outcome variable is approximately normally distributed with mean $\approx -5.0$ and standard deviation $\approx 12.7$ (Figure~\ref{fig:target}), requiring no transformation.
+
+\textbf{Correlation analysis.}
+Pearson correlations revealed that \texttt{depth} is the single strongest linear predictor ($r = -0.41$). Among the unnamed features, \texttt{b3} ($r = 0.23$), \texttt{b1} ($r = 0.17$), \texttt{a1} ($r = 0.15$), and \texttt{a4} ($r = 0.12$) show modest correlations. Surprisingly, traditional diamond value drivers such as carat ($r \approx 0.00$) and price ($r = 0.02$) exhibit negligible linear relationships with the outcome, suggesting the target encodes something beyond market value. The diamond dimension features ($x$, $y$, $z$) are highly multicollinear with carat ($r > 0.97$), but this is handled implicitly by tree-based models.
+
+\textbf{Data cleaning.}
+Two issues were identified and addressed. First, four samples had zero-valued dimensions ($x = 0$, $y = 0$, or $z = 0$), which are physically impossible for a real diamond (Figure~\ref{fig:scatter}). Second, one sample contained an extreme outlier ($y = 58.9\,\text{mm}$), far beyond the plausible range. These five rows (0.05\% of the data) were removed as they represent physically invalid or implausible measurements, leaving 9{,}995 training samples.
+
+\textbf{Categorical features.}
+Box plots of cut, color, and clarity against the outcome show only subtle differences in median values across categories, indicating limited standalone predictive power from these features.
+
+\begin{figure}[H]
+    \centering
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Figure_1.png}
+        \caption{Distribution of the target variable.}
+        \label{fig:target}
+    \end{subfigure}
+    \hfill
+    \begin{subfigure}[t]{0.48\textwidth}
+        \centering
+        \includegraphics[width=\textwidth]{Figure_2.png}
+        \caption{Diamond dimensions before cleaning, showing outliers at $(0,0)$ and $y \approx 59$.}
+        \label{fig:scatter}
+    \end{subfigure}
+    \caption{Exploratory data analysis visualisations.}
+\end{figure}
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Model Selection}
+% ══════════════════════════════════════════════════════════════════════════════
+
+Four candidate regression algorithms were evaluated, chosen to span a range of complexity:
+
+\begin{enumerate}
+    \item \textbf{Ridge Regression} -- a regularised linear model ($\alpha = 5.0$). Serves as a simple, interpretable baseline that assumes a linear relationship between features and outcome.
+    \item \textbf{Random Forest (RF)} -- an ensemble of 400 decision trees trained on bootstrapped samples with random feature subsets. Captures non-linear relationships and is robust to overfitting.
+    \item \textbf{XGBoost (XGB)} -- a gradient-boosted tree ensemble (500 trees, learning rate 0.05, max depth 5). Uses regularisation and column subsampling to reduce variance.
+    \item \textbf{Gradient Boosting Regressor (GBR)} -- sklearn's gradient boosting implementation (500 trees, learning rate 0.03, max depth 3). Builds trees sequentially, with each tree correcting the residual errors of the ensemble so far.
+\end{enumerate}
+
+Tree-based ensemble methods were prioritised because the EDA revealed a non-linear relationship between \texttt{depth} and outcome, the presence of both continuous and categorical features, and high multicollinearity among the dimension variables---conditions where tree ensembles typically outperform linear models.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section{Model Training and Evaluation}
+% ══════════════════════════════════════════════════════════════════════════════
+
+	extbf{Preprocessing.}
+Categorical features (cut, color, clarity) were one-hot encoded, which is required for sklearn models as tree-based estimators cannot consume raw string categories. Numerical features were median-imputed as a defensive step to ensure robustness to potential missing values in unseen data. Feature standardisation (zero mean, unit variance) was applied primarily to support linear baselines such as Ridge regression; for tree-based models, scaling is not strictly necessary but does not affect correctness. All preprocessing steps were embedded inside an sklearn 	exttt{Pipeline} to prevent data leakage between cross-validation folds.
+
+	extbf{Cross-validation.}
+Each candidate was evaluated using 5-fold cross-validation on the cleaned training set, scoring by $R^2$. Results are summarised in Table~\ref{tab:cv}.
+
+\begin{table}[H]
+\centering
+\caption{5-fold cross-validation results.}
+\label{tab:cv}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Model} & \textbf{Mean $R^2$} & \textbf{Std} \\
+\midrule
+Ridge Regression   & 0.2853 & 0.0181 \\
+Random Forest      & 0.4557 & 0.0095 \\
+XGBoost            & 0.4631 & 0.0142 \\
+\textbf{Gradient Boosting (GBR)} & \textbf{0.4719} & \textbf{0.0098} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+GBR achieved the highest mean $R^2$ (0.4719) with low variance across folds (std $= 0.0098$), indicating both strong performance and stability. Ridge performed substantially worse ($R^2 = 0.2853$), confirming that the relationship between features and outcome is non-linear. XGBoost was competitive ($R^2 = 0.4631$) but slightly behind GBR, likely because the smaller dataset benefits from GBR's more conservative tree depth.
+
+To further assess generalisation, the final tuned GBR pipeline was evaluated using out-of-fold (OOF) predictions from cross-validation, confirming that performance remains consistent when each sample is predicted by a model that did not see it during training.
+
+\textbf{Hyperparameters.}
+After selecting Gradient Boosting (GBR) as the best-performing model family, the full preprocessing+model pipeline was tuned using \texttt{RandomizedSearchCV} with 5-fold cross-validation (\texttt{n\_iter}=20, scoring by $R^2$). This provides evidence for the chosen hyperparameters by comparing multiple configurations under the same validation protocol rather than reporting a single hand-picked setting.
+
+\begin{table}[H]
+\centering
+\caption{GBR hyperparameter search space used in \texttt{RandomizedSearchCV}.}
+\label{tab:gbr_search}
+\begin{tabular}{ll}
+\toprule
+\textbf{Hyperparameter} & \textbf{Values searched} \\
+\midrule
+\texttt{n\_estimators} & \{100, 200, 300, 500\} \\
+\texttt{learning\_rate} & \{0.01, 0.05, 0.1\} \\
+\texttt{max\_depth} & \{2, 3, 4\} \\
+\texttt{subsample} & \{0.6, 0.8, 1.0\} \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+The selected configuration (best mean CV $R^2$) was then refit on the full cleaned training set before generating test-set predictions. The search focuses on the key bias--variance controls for boosting: a smaller \texttt{learning\_rate} typically requires more \texttt{n\_estimators}, while \texttt{max\_depth} and \texttt{subsample} regularise tree complexity and reduce overfitting.
+
+\textbf{Final model.}
+The GBR pipeline was retrained on all 9{,}995 cleaned training samples and used to generate 1{,}000 predictions on the test set, saved as the submission file.
+
+% ══════════════════════════════════════════════════════════════════════════════
+\section*{Code Supplement}
+% ══════════════════════════════════════════════════════════════════════════════
+
+The complete implementation is provided in the accompanying \texttt{train\_and\_submit.py} file. The script performs all steps end-to-end: data loading, cleaning, preprocessing, model comparison via cross-validation, final model training, and submission generation. EDA visualisations were produced in a separate script. All code is also available at: \url{https://github.com/aytenmarab/ml_cw1}.
+
+\end{document}
