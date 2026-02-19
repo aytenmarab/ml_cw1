@@ -149,7 +149,6 @@ best_model = candidates[best_name]
 print(f"\nBest model: {best_name}")
 
 # Proper GBR hyperparameter tuning (only if GBR is the best)
-# IMPORTANT: we tune the FULL pipeline (preprocessing + model) so tuning matches final training
 if best_name == "gbr":
     base_pipe = Pipeline([
         ("pre", preprocessing),
